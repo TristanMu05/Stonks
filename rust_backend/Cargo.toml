@@ -1,6 +1,7 @@
 [workspace]
 members = [
-    "shared"
+    "shared",
+    "data_collector"
 ]
 resolver = "2"
 

@@ -5,6 +5,7 @@
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
+use anyhow;
 
 // single market data point from an exchange
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -176,25 +177,25 @@ pub struct Config {
 }
 
 impl Config {
-    // Load config from env variables
-    pub fn from_env() -> Result<Self, String> {
+    /// Load configuration from environment variables
+    pub fn from_env() -> anyhow::Result<Self> {
         let database_url = std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://localhost/trading_db".to_string());
-
+            .unwrap_or_else(|_| "postgresql://localhost/trading_db".to_string());
+        
         let redis_url = std::env::var("REDIS_URL")
             .unwrap_or_else(|_| "redis://localhost".to_string());
-
+            
         let polygon_api_key = std::env::var("POLYGON_API_KEY")
-            .map_err(|_| "POLYGON_API_KEY environment varaible not set".to_string())?;
-
+            .map_err(|_| anyhow::anyhow!("POLYGON_API_KEY environment variable not set"))?;
+            
         let alpaca_api_key = std::env::var("ALPACA_API_KEY")
-            .map_err(|_| "ALPACA_API_KEY environment varaible not set".to_string())?;
-
+            .map_err(|_| anyhow::anyhow!("ALPACA_API_KEY environment variable not set"))?;
+        
         Ok(Config {
             database_url,
             redis_url,
             polygon_api_key,
-            alpaca_api_key, 
+            alpaca_api_key,
         })
     }
 }
