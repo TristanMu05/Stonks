@@ -173,6 +173,7 @@ pub struct Config {
     pub database_url: String,
     pub redis_url: String,
     pub polygon_api_key: String,
+    pub finnhub_api_key: String,
     pub alpaca_api_key: String,
 }
 
@@ -186,15 +187,19 @@ impl Config {
             .unwrap_or_else(|_| "redis://localhost".to_string());
             
         let polygon_api_key = std::env::var("POLYGON_API_KEY")
-            .map_err(|_| anyhow::anyhow!("POLYGON_API_KEY environment variable not set"))?;
+            .unwrap_or_else(|_| "not_set".to_string());
+        
+        let finnhub_api_key = std::env::var("FINNHUB_API_KEY")
+            .map_err(|_| anyhow::anyhow!("FINNHUB_API_KEY environment variable not set"))?;
             
         let alpaca_api_key = std::env::var("ALPACA_API_KEY")
-            .map_err(|_| anyhow::anyhow!("ALPACA_API_KEY environment variable not set"))?;
+            .unwrap_or_else(|_| "not_set".to_string());
         
         Ok(Config {
             database_url,
             redis_url,
             polygon_api_key,
+            finnhub_api_key,
             alpaca_api_key,
         })
     }

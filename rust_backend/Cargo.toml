@@ -1,7 +1,8 @@
 [workspace]
 members = [
     "shared",
-    "data_collector"
+    "data_collector",
+    "execution_engine"
 ]
 resolver = "2"
 
@@ -12,3 +13,4 @@ serde_json = "1.0"
 anyhow = "1.0"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+axum = "0.7"
