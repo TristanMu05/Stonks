@@ -5,6 +5,7 @@ mod polygon;
 mod finnhub;
 mod simulator;
 mod binance;
+mod alt_data;
 
 use anyhow::Result;
 use tracing::{info, warn};
@@ -14,6 +15,7 @@ use finnhub::FinnhubWebSocket;
 use simulator::MarketSimulator;
 use polygon::PolygonWebSocket;
 use binance::BinanceWebSocket;
+use alt_data::AltDataCollector;
 use tokio::signal;
 use tokio::sync::broadcast::{self, Sender};
 use tokio::sync::RwLock;
@@ -286,6 +288,13 @@ async fn main() -> Result<()> {
         }
     });
     
+    // Start Alternative Data collector in background
+    let alt_config = config.clone();
+    tokio::spawn(async move {
+        let collector = AltDataCollector::new(alt_config);
+        if let Err(e) = collector.run().await { warn!("Alt data collector error: {}", e); }
+    });
+
     let finnhub_client = FinnhubWebSocket::new(config.clone(), symbols.clone(), tx.clone());
 
     // If any BINANCE:* symbols present, spawn a Binance WS task for those

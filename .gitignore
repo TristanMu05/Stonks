@@ -60,3 +60,8 @@ models/
 *.onnx
 backtests/
 paper_trading_results/
+
+# Frontend stuff
+frontend/node_modules/
+frontend/.next/
+frontend/app/

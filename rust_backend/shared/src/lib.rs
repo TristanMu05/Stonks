@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde_json;
 use uuid::Uuid;
 use anyhow;
 
@@ -174,6 +175,7 @@ pub struct Config {
     pub redis_url: String,
     pub polygon_api_key: String,
     pub finnhub_api_key: String,
+    pub quiver_api_key: String,
     pub alpaca_api_key: String,
 }
 
@@ -191,6 +193,9 @@ impl Config {
         
         let finnhub_api_key = std::env::var("FINNHUB_API_KEY")
             .map_err(|_| anyhow::anyhow!("FINNHUB_API_KEY environment variable not set"))?;
+        
+        let quiver_api_key = std::env::var("QUIVER_API_KEY")
+            .unwrap_or_else(|_| "not_set".to_string());
             
         let alpaca_api_key = std::env::var("ALPACA_API_KEY")
             .unwrap_or_else(|_| "not_set".to_string());
@@ -200,7 +205,28 @@ impl Config {
             redis_url,
             polygon_api_key,
             finnhub_api_key,
+            quiver_api_key,
             alpaca_api_key,
         })
     }
+}
+
+// alternative data event types
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AltDataType {
+    CongressionalTrade,
+    GovernmentContract,
+    NewsSentiment,
+}
+
+// normalized alternative data event used across services
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AltDataEvent {
+    pub id: Uuid,
+    pub event_type: AltDataType,
+    pub symbol: Option<String>,
+    pub description: String,
+    pub impact_score: f64,
+    pub timestamp: DateTime<Utc>,
+    pub metadata: serde_json::Value,
 }
