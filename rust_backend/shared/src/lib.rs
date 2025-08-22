@@ -177,6 +177,7 @@ pub struct Config {
     pub finnhub_api_key: String,
     pub quiver_api_key: String,
     pub alpaca_api_key: String,
+    pub alpha_vantage_key: String,
 }
 
 impl Config {
@@ -200,6 +201,9 @@ impl Config {
         let alpaca_api_key = std::env::var("ALPACA_API_KEY")
             .unwrap_or_else(|_| "not_set".to_string());
         
+        let alpha_vantage_key = std::env::var("ALPHA_VANTAGE_KEY")
+            .unwrap_or_else(|_| "not_set".to_string());
+        
         Ok(Config {
             database_url,
             redis_url,
@@ -207,6 +211,7 @@ impl Config {
             finnhub_api_key,
             quiver_api_key,
             alpaca_api_key,
+            alpha_vantage_key,
         })
     }
 }

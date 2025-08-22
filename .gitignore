@@ -65,3 +65,6 @@ paper_trading_results/
 frontend/node_modules/
 frontend/.next/
 frontend/app/
+
+# run results etc...
+*.json

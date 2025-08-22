@@ -1,11 +1,20 @@
 //! High-performance market data collector
 //! Connects to Finnhub for FREE real-time stock data
+//! 
+//! Features:
+//! - Real-time WebSocket connections to Finnhub, Polygon, and Binance
+//! - Persistent tick history storage (saves to JSON files every 30 seconds)
+//! - HTTP API with SSE for real-time data streaming
+//! - Chart data endpoints for candlesticks and historical prices
 
 mod polygon;
 mod finnhub;
 mod simulator;
 mod binance;
 mod alt_data;
+mod congress_free;
+mod congress_sources;
+mod historical;
 
 use anyhow::Result;
 use tracing::{info, warn};
@@ -16,6 +25,8 @@ use simulator::MarketSimulator;
 use polygon::PolygonWebSocket;
 use binance::BinanceWebSocket;
 use alt_data::AltDataCollector;
+use congress_free::FreeCongressTracker;
+use historical::HistoricalDataCollector;
 use tokio::signal;
 use tokio::sync::broadcast::{self, Sender};
 use tokio::sync::RwLock;
@@ -32,6 +43,9 @@ use std::convert::Infallible;
 use std::collections::{HashMap, VecDeque};
 use serde::{Deserialize, Serialize};
 use chrono::Duration;
+use std::fs;
+use std::path::Path;
+use std::time::SystemTime;
 
 #[derive(Clone)]
 struct AppState {
@@ -40,6 +54,8 @@ struct AppState {
 }
 
 const MAX_HISTORY_PER_SYMBOL: usize = 1000;
+const HISTORY_SAVE_INTERVAL_SECS: u64 = 30; // Save every 30 seconds
+const HISTORY_FILE_PREFIX: &str = "tick_history";
 
 async fn sse_handler(
     State(app_state): State<Arc<AppState>>,
@@ -217,40 +233,253 @@ async fn candles_handler(
 
     (headers, Json(out))
 }
-#[tokio::main]
-async fn main() -> Result<()> {
-    // Initialize logging
-    tracing_subscriber::fmt::init();
+
+/// Save target symbols to JSON file
+async fn save_target_symbols(symbols: &[String], filepath: &str) -> Result<()> {
+    let json = serde_json::to_string_pretty(symbols)?;
+    fs::write(filepath, json)?;
+    info!("💾 Saved {} target symbols to {}", symbols.len(), filepath);
+    Ok(())
+}
+
+/// Load target symbols from JSON file
+async fn load_target_symbols(filepath: &str) -> Result<Vec<String>> {
+    if !Path::new(filepath).exists() {
+        return Ok(Vec::new());
+    }
     
-    info!("🚀 Starting Quant Trading Data Collector");
+    let content = fs::read_to_string(filepath)?;
+    let symbols: Vec<String> = serde_json::from_str(&content)?;
+    info!("📂 Loaded {} target symbols from {}", symbols.len(), filepath);
+    Ok(symbols)
+}
+
+/// Save tick history to JSON file
+async fn save_tick_history(history: &HashMap<String, VecDeque<MarketTick>>) -> Result<()> {
+    let timestamp = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
     
-    // Load configuration
-    let config = Arc::new(Config::from_env()?);
-    info!("✅ Configuration loaded - Finnhub key: {}...", &config.finnhub_api_key[..8]);
+    for (symbol, ticks) in history.iter() {
+        if ticks.is_empty() { continue; }
+        
+        let filename = format!("{}_{}.json", HISTORY_FILE_PREFIX, symbol.replace(":", "_"));
+        let ticks_vec: Vec<MarketTick> = ticks.iter().cloned().collect();
+        
+        match serde_json::to_string_pretty(&ticks_vec) {
+            Ok(json) => {
+                if let Err(e) = fs::write(&filename, json) {
+                    warn!("Failed to save history for {}: {}", symbol, e);
+                } else {
+                    info!("💾 Saved {} ticks for {} to {}", ticks_vec.len(), symbol, filename);
+                }
+            }
+            Err(e) => warn!("Failed to serialize history for {}: {}", symbol, e),
+        }
+    }
     
-    // Define symbols to track (configurable via SYMBOLS env, comma separated)
-    let symbols: Vec<String> = std::env::var("SYMBOLS")
-        .ok()
-        .map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect())
-        .unwrap_or_else(|| vec![
-            "AAPL".to_string(),
-            "MSFT".to_string(),
-            "GOOGL".to_string(),
-            "TSLA".to_string(),
-            "NVDA".to_string(),
-            // 24/7 feed example
-            "BINANCE:BTCUSDT".to_string(),
-        ]);
+    Ok(())
+}
+
+/// Load tick history from JSON files
+async fn load_tick_history() -> Result<HashMap<String, VecDeque<MarketTick>>> {
+    let mut history = HashMap::new();
     
-    info!("📊 Tracking symbols: {:?}", symbols);
+    // Find all tick history files
+    let entries = match fs::read_dir(".") {
+        Ok(entries) => entries,
+        Err(_) => return Ok(history),
+    };
+    
+    for entry in entries.flatten() {
+        let filename = entry.file_name();
+        let filename_str = filename.to_string_lossy();
+        
+        if filename_str.starts_with(HISTORY_FILE_PREFIX) && filename_str.ends_with(".json") {
+            // Extract symbol from filename
+            let symbol_part = filename_str
+                .strip_prefix(&format!("{}_", HISTORY_FILE_PREFIX))
+                .and_then(|s| s.strip_suffix(".json"))
+                .unwrap_or("");
+            
+            let symbol = symbol_part.replace("_", ":");
+            
+            match fs::read_to_string(entry.path()) {
+                Ok(content) => {
+                    match serde_json::from_str::<Vec<MarketTick>>(&content) {
+                        Ok(ticks) => {
+                            let mut deque = VecDeque::new();
+                            for tick in ticks.into_iter().take(MAX_HISTORY_PER_SYMBOL) {
+                                deque.push_back(tick);
+                            }
+                            history.insert(symbol.clone(), deque);
+                            info!("📂 Loaded {} ticks for {} from {}", history.get(&symbol).unwrap().len(), symbol, filename_str);
+                        }
+                        Err(e) => warn!("Failed to parse history file {}: {}", filename_str, e),
+                    }
+                }
+                Err(e) => warn!("Failed to read history file {}: {}", filename_str, e),
+            }
+        }
+    }
+    
+    Ok(history)
+}
+
+/// Phase 1: Collect detailed government data and save target symbols
+async fn run_phase_1(config: Arc<Config>) -> Result<()> {
+    info!("🏛️ === PHASE 1: COLLECTING DETAILED GOVERNMENT DATA ===");
+    
+    // Collect detailed congressional trades
+    let mut congress_tracker = FreeCongressTracker::new();
+    let _events = congress_tracker.collect_all_trades().await?;
+    
+    info!("✅ Phase 1 completed. Detailed files saved:");
+    info!("   📄 congressional_trades_detailed.json");
+    info!("   📊 symbol_analysis.json");
+    info!("   🎯 target_symbols.json");
+    
+    // Also collect government contracts data in background
+    tokio::spawn(async move {
+        let alt_collector = AltDataCollector::new(config);
+        if let Err(e) = alt_collector.run().await {
+            warn!("Alt data collector error: {}", e);
+        }
+    });
+    
+    Ok(())
+}
+
+/// Phase 2: Load target symbols, fetch historical data, and perform event correlation
+async fn run_phase_2(config: Arc<Config>) -> Result<()> {
+    info!("📈 === PHASE 2: COLLECTING HISTORICAL DATA & EVENT CORRELATION ===");
+    
+    // Load target symbols from Phase 1
+    let target_symbols = load_target_symbols("target_symbols.json").await?;
+    
+    if target_symbols.is_empty() {
+        warn!("⚠️ No target symbols found. Run Phase 1 first with COLLECT_GOVERNMENT_DATA=1");
+        return Ok(());
+    }
+    
+    info!("📊 Fetching historical data for {} symbols: {:?}", target_symbols.len(), target_symbols);
+    
+    // Load detailed congressional trades from Phase 1
+    let detailed_trades_content = fs::read_to_string("congressional_trades_detailed.json")?;
+    let detailed_trades: Vec<congress_free::DetailedCongressTrade> = serde_json::from_str(&detailed_trades_content)?;
+    info!("📋 Loaded {} detailed congressional trades", detailed_trades.len());
+    
+    // Initialize historical data collector
+    let historical_collector = HistoricalDataCollector::new(&config);
+    
+    // Process each target symbol
+    for symbol in &target_symbols {
+        info!("📈 Processing historical data for {}", symbol);
+        
+        // Check if analysis already exists (can be overridden with FORCE_REFRESH=1)
+        let analysis_filename = format!("analysis_{}.json", symbol);
+        if Path::new(&analysis_filename).exists() && std::env::var("FORCE_REFRESH").is_err() {
+            info!("📁 Analysis for {} already exists, skipping", symbol);
+            continue;
+        }
+        
+        // Fetch historical price data
+        match historical_collector.fetch_daily_data(symbol).await {
+            Ok(price_data) => {
+                if price_data.is_empty() {
+                    warn!("⚠️ No price data received for {} (API limit or error)", symbol);
+                    
+                    // Still create an empty analysis file
+                    let empty_analysis = historical::SymbolAnalysis {
+                        symbol: symbol.clone(),
+                        analysis_date: chrono::Utc::now().date_naive().to_string(),
+                        price_data_points: 0,
+                        events_analyzed: 0,
+                        correlations: Vec::new(),
+                        summary: historical::AnalysisSummary {
+                            avg_return_1d_on_events: 0.0,
+                            avg_return_3d_on_events: 0.0,
+                            avg_return_7d_on_events: 0.0,
+                            positive_events_1d: 0,
+                            negative_events_1d: 0,
+                            max_single_day_impact: 0.0,
+                            min_single_day_impact: 0.0,
+                        },
+                    };
+                    
+                    let analysis_json = serde_json::to_string_pretty(&empty_analysis)?;
+                    fs::write(&analysis_filename, analysis_json)?;
+                    info!("📄 Saved empty analysis for {} to {}", symbol, analysis_filename);
+                } else {
+                    info!("📊 Fetched {} price points for {}", price_data.len(), symbol);
+                    
+                    // Correlate with congressional events
+                    let analysis = historical_collector.correlate_events_with_prices(symbol, &detailed_trades, &price_data)?;
+                    
+                    // Save analysis to file
+                    let analysis_json = serde_json::to_string_pretty(&analysis)?;
+                    fs::write(&analysis_filename, analysis_json)?;
+                    
+                    info!("💾 Saved analysis for {} to {} ({} events correlated)", 
+                          symbol, analysis_filename, analysis.events_analyzed);
+                    
+                    if !analysis.correlations.is_empty() {
+                        info!("📈 Average returns for {}: 1d={:.2}%, 3d={:.2}%, 7d={:.2}%", 
+                              symbol, 
+                              analysis.summary.avg_return_1d_on_events,
+                              analysis.summary.avg_return_3d_on_events,
+                              analysis.summary.avg_return_7d_on_events);
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("❌ Failed to fetch historical data for {}: {}", symbol, e);
+                continue;
+            }
+        }
+        
+        // Alpha Vantage free tier: 5 requests per minute
+        info!("⏳ Waiting 15 seconds for API rate limit...");
+        tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
+    }
+    
+    info!("✅ Phase 2 completed. Historical analysis files saved to analysis_SYMBOL.json");
+    Ok(())
+}
+
+/// Phase 3: Real-time monitoring with target symbols
+async fn run_phase_3(config: Arc<Config>) -> Result<()> {
+    info!("🔴 === PHASE 3: REAL-TIME MONITORING ===");
+    
+    // Load target symbols if available, otherwise use defaults
+    let mut symbols = load_target_symbols("target_symbols.json").await.unwrap_or_default();
+    
+    // If no target symbols, use default tracking symbols
+    if symbols.is_empty() {
+        symbols = std::env::var("SYMBOLS")
+            .ok()
+            .map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect())
+            .unwrap_or_else(|| vec![
+                "AAPL".to_string(),
+                "MSFT".to_string(),
+                "GOOGL".to_string(),
+                "TSLA".to_string(),
+                "NVDA".to_string(),
+                "BINANCE:BTCUSDT".to_string(),
+            ]);
+    }
+    
+    info!("📊 Real-time tracking symbols: {:?}", symbols);
     info!("Press Ctrl+C to stop");
     
-    // Try Finnhub WebSocket first, fall back to Polygon, then simulator
-    info!("🌐 Attempting Finnhub WebSocket connection...");
-
     // Create broadcast channel and start HTTP server for SSE
     let (tx, _rx) = broadcast::channel::<MarketTick>(1024);
-    let history: Arc<RwLock<HashMap<String, VecDeque<MarketTick>>>> = Arc::new(RwLock::new(HashMap::new()));
+    
+    // Load existing tick history from files
+    info!("📂 Loading existing tick history...");
+    let existing_history = load_tick_history().await.unwrap_or_default();
+    let history: Arc<RwLock<HashMap<String, VecDeque<MarketTick>>>> = Arc::new(RwLock::new(existing_history));
 
     // Fan-in ticks into in-memory history for backlogs
     let hist_writer_tx = tx.clone();
@@ -262,6 +491,25 @@ async fn main() -> Result<()> {
             let dq = map.entry(tick.symbol.clone()).or_insert_with(VecDeque::new);
             dq.push_back(tick.clone());
             if dq.len() > MAX_HISTORY_PER_SYMBOL { let _ = dq.pop_front(); }
+        }
+    });
+
+    // Periodic history saving task
+    let save_history_map = history.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(HISTORY_SAVE_INTERVAL_SECS));
+        loop {
+            interval.tick().await;
+            let history_snapshot = {
+                let map = save_history_map.read().await;
+                map.clone()
+            };
+            
+            if !history_snapshot.is_empty() {
+                if let Err(e) = save_tick_history(&history_snapshot).await {
+                    warn!("Failed to save tick history: {}", e);
+                }
+            }
         }
     });
 
@@ -288,11 +536,24 @@ async fn main() -> Result<()> {
         }
     });
     
-    // Start Alternative Data collector in background
+    // Start Alternative Data collector in background for real-time monitoring
     let alt_config = config.clone();
     tokio::spawn(async move {
         let collector = AltDataCollector::new(alt_config);
         if let Err(e) = collector.run().await { warn!("Alt data collector error: {}", e); }
+    });
+
+    // Start congressional tracker for real-time monitoring
+    tokio::spawn(async move {
+        let mut tracker = FreeCongressTracker::new();
+        // Check for new congressional trades every hour
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));
+        loop {
+            interval.tick().await;
+            if let Err(e) = tracker.get_recent_trades(1).await {
+                warn!("Congressional tracker error: {}", e);
+            }
+        }
     });
 
     let finnhub_client = FinnhubWebSocket::new(config.clone(), symbols.clone(), tx.clone());
@@ -362,10 +623,62 @@ async fn main() -> Result<()> {
             }
         }
         _ = signal::ctrl_c() => {
-            info!("🛑 Received Ctrl+C, exiting");
+            info!("🛑 Received Ctrl+C, saving history and exiting");
+            
+            // Final save of tick history before exiting
+            let final_history = {
+                let map = history.read().await;
+                map.clone()
+            };
+            
+            if !final_history.is_empty() {
+                info!("💾 Performing final save of tick history...");
+                if let Err(e) = save_tick_history(&final_history).await {
+                    warn!("Failed to perform final save: {}", e);
+                } else {
+                    info!("✅ Final history save completed");
+                }
+            }
+            
             return Ok(());
         }
     }
     
     Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    // Initialize logging
+    tracing_subscriber::fmt::init();
+    
+    info!("🚀 Starting Quant Trading Data Collector");
+    
+    // Load configuration
+    let config = Arc::new(Config::from_env()?);
+    info!("✅ Configuration loaded - Finnhub key: {}...", &config.finnhub_api_key[..8]);
+    
+    // Check environment flags to determine which phase to run
+    let collect_government = std::env::var("COLLECT_GOVERNMENT_DATA")
+        .map(|v| v == "1" || v.to_lowercase() == "true")
+        .unwrap_or(false);
+        
+    let collect_historical = std::env::var("COLLECT_HISTORICAL")
+        .map(|v| v == "1" || v.to_lowercase() == "true")
+        .unwrap_or(false);
+
+    match (collect_government, collect_historical) {
+        (true, _) => {
+            // Phase 1: Collect government data
+            run_phase_1(config).await
+        }
+        (false, true) => {
+            // Phase 2: Collect historical data
+            run_phase_2(config).await
+        }
+        (false, false) => {
+            // Phase 3: Real-time monitoring (default)
+            run_phase_3(config).await
+        }
+    }
 }
