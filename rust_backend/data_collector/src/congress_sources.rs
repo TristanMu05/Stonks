@@ -50,9 +50,6 @@ impl CapitolTradesSource {
     pub fn new() -> Self {
         let client = reqwest::Client::builder()
             .default_headers(default_headers())
-            .gzip(true)
-            .brotli(true)
-            .deflate(true)
             .timeout(Duration::from_secs(20))
             .build()
             .unwrap();

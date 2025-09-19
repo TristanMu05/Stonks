@@ -1,7 +1,22 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import TickerCard from './TickerCard';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  rectSortingStrategy,
+} from '@dnd-kit/sortable';
+import SortableTickerCard from './SortableTickerCard';
 import SymbolList from './SymbolList';
 
 export type MarketTick = {
@@ -24,15 +39,49 @@ function getApiBase(url: string): string {
   }
 }
 
+// Load symbol order from localStorage
+function loadSymbolOrder(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const saved = localStorage.getItem('symbolOrder');
+    return saved ? JSON.parse(saved) : [];
+  } catch {
+    return [];
+  }
+}
+
+// Save symbol order to localStorage
+function saveSymbolOrder(order: string[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem('symbolOrder', JSON.stringify(order));
+  } catch {
+    // Ignore localStorage errors
+  }
+}
+
 export default function LiveTickers() {
   const [lastTickBySymbol, setLastTickBySymbol] = useState<Map<string, MarketTick>>(new Map());
   const [historyBySymbol, setHistoryBySymbol] = useState<Map<string, MarketTick[]>>(new Map());
   const [connected, setConnected] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<'cards' | 'list'>('cards');
-  const [timeframe, setTimeframe] = useState<'1m' | '1d'>('1m');
   const [windowSize, setWindowSize] = useState<number>(60);
+  const [symbolOrder, setSymbolOrder] = useState<string[]>([]);
   const sourceRef = useRef<EventSource | null>(null);
+
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  // Load saved symbol order on mount
+  useEffect(() => {
+    setSymbolOrder(loadSymbolOrder());
+  }, []);
 
   // bootstrap initial history
   useEffect(() => {
@@ -97,7 +146,41 @@ export default function LiveTickers() {
     };
   }, []);
 
-  const symbols = useMemo(() => Array.from(lastTickBySymbol.keys()).sort(), [lastTickBySymbol]);
+  // Handle drag end
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldIndex = symbols.indexOf(active.id as string);
+      const newIndex = symbols.indexOf(over.id as string);
+      const newOrder = arrayMove(symbols, oldIndex, newIndex);
+      setSymbolOrder(newOrder);
+      saveSymbolOrder(newOrder);
+    }
+  }
+
+  // Compute symbols order: use saved order, fall back to alphabetical
+  const symbols = useMemo(() => {
+    const availableSymbols = Array.from(lastTickBySymbol.keys());
+    
+    if (symbolOrder.length === 0) {
+      // No saved order, use alphabetical
+      return availableSymbols.sort();
+    }
+    
+    // Use saved order for existing symbols, append new ones at the end
+    const orderedSymbols = symbolOrder.filter(sym => availableSymbols.includes(sym));
+    const newSymbols = availableSymbols.filter(sym => !symbolOrder.includes(sym)).sort();
+    const finalOrder = [...orderedSymbols, ...newSymbols];
+    
+    // Update saved order if we have new symbols
+    if (newSymbols.length > 0) {
+      setSymbolOrder(finalOrder);
+      saveSymbolOrder(finalOrder);
+    }
+    
+    return finalOrder;
+  }, [lastTickBySymbol, symbolOrder]);
 
   return (
     <section className="mt-6 space-y-4">
@@ -122,22 +205,6 @@ export default function LiveTickers() {
             List
           </button>
         </div>
-        {view === 'cards' && (
-          <div className="inline-flex rounded-lg border border-neutral-800 bg-neutral-900 p-1 text-sm">
-            <button
-              className={`rounded-md px-3 py-1 ${timeframe === '1m' ? 'bg-neutral-800' : ''}`}
-              onClick={() => setTimeframe('1m')}
-            >
-              1m
-            </button>
-            <button
-              className={`rounded-md px-3 py-1 ${timeframe === '1d' ? 'bg-neutral-800' : ''}`}
-              onClick={() => setTimeframe('1d')}
-            >
-              1d
-            </button>
-          </div>
-        )}
 
         {view === 'cards' && (
           <div className="inline-flex rounded-lg border border-neutral-800 bg-neutral-900 p-1 text-sm">
@@ -152,15 +219,46 @@ export default function LiveTickers() {
             ))}
           </div>
         )}
+
+        {view === 'cards' && (
+          <button
+            onClick={() => {
+              setSymbolOrder([]);
+              saveSymbolOrder([]);
+            }}
+            className="rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-1 text-sm hover:bg-neutral-800 transition-colors"
+            title="Reset card order"
+          >
+            Reset Order
+          </button>
+        )}
       </div>
 
       {view === 'cards' ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {symbols.map((sym) => {
-            const tick = lastTickBySymbol.get(sym)!;
-            const history = historyBySymbol.get(sym) ?? [];
-            return <TickerCard key={sym} tick={tick} history={history} timeframe={timeframe} windowSize={windowSize} />;
-          })}
+        <div className="space-y-4">
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext items={symbols} strategy={rectSortingStrategy}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {symbols.map((sym) => {
+                  const tick = lastTickBySymbol.get(sym)!;
+                  const history = historyBySymbol.get(sym) ?? [];
+                                  return (
+                  <SortableTickerCard
+                    key={sym}
+                    id={sym}
+                    tick={tick}
+                    history={history}
+                    windowSize={windowSize}
+                  />
+                );
+                })}
+              </div>
+            </SortableContext>
+          </DndContext>
         </div>
       ) : (
         <SymbolList
