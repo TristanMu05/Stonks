@@ -73,3 +73,8 @@ frontend/app/
 .cursor/
 
 database/
+
+backtest_docs/*
+!backtest_docs/trading_guide.md
+!backtest_docs/discordnotes.txt
+!backtest_docs/STRATEGY_FINDINGS.md
