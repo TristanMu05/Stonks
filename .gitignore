@@ -9,7 +9,7 @@ target/
 *.secret
 
 # Trading data and logs
-data/
+data/*
 logs/
 *.log
 *.db
@@ -68,3 +68,8 @@ frontend/app/
 
 # run results etc...
 *.json
+
+.claude/
+.cursor/
+
+database/

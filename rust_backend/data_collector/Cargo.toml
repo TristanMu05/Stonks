@@ -26,3 +26,5 @@ scraper = "0.18"
 regex = "1.10"
 async-trait = "0.1"
 dotenv = "0.15"
+sqlx = { workspace = true }
+num-traits = { workspace = true }

@@ -1,0 +1,138 @@
+THE ULTIMATE TRADER’S GUIDE
+Based on the TJR Trading Curriculum
+PART I: THE FUNDAMENTALS
+Before applying strategy, you must understand the language of the chart.
+1. Candlestick Anatomy
+Timeframes: Each candle represents a specific amount of time (1m, 5m, 1H, 4H, Daily).
+The Body: Represents the open and close price. It shows conviction.
+The Wicks: Represents the High and Low of that time period. Wicks show price history, "snail trails," and potential rejection.
+The Logic: A candle opening, moving down (leaving a wick), moving up, and closing high indicates buyers took control.
+2. Highs and Lows (Market Structure)
+Swing High: A three-candle formation where the middle candle has a higher high than the candles to its immediate left and right. (Simplified: Move Up -> Move Down).
+Swing Low: A three-candle formation where the middle candle has a lower low than the candles to its immediate left and right. (Simplified: Move Down -> Move Up).
+Identifying Trends:
+Uptrend: Series of Higher Highs (HH) and Higher Lows (HL).
+Downtrend: Series of Lower Highs (LH) and Lower Lows (LL).
+Consolidation: Sideways movement with no clear direction.
+3. Break of Structure (BOS)
+Definition: When a candle body closes past a previous Swing High (in an uptrend) or Swing Low (in a downtrend).
+Significance: This confirms the continuation or shift of a trend.
+Uptrend: Low gets closed underneath = Shift to Bearish.
+Downtrend: High gets closed above = Shift to Bullish.
+PART II: THE TOOLBOX (CONFLUENCES)
+These are the specific tools used to identify entries and targets. Never use one in isolation; combine them for high probability.
+1. Liquidity
+What is it? Resting orders (Stop Losses, Buy Stops, Sell Stops). It is the fuel that moves the market.
+Where is it?
+Above Highs: Buy Stops (Liquidity for sellers).
+Below Lows: Sell Stops (Liquidity for buyers).
+The Logic: The "Smart Money" needs to trigger these stops to fill their large orders. We look for Liquidity Sweeps (price pokes a high/low and reverses) to enter trades.
+2. Fair Value Gaps (FVG) / Imbalances
+Definition: A three-candle pattern where the first candle’s wick and the third candle’s wick do not overlap, leaving a gap in the middle candle.
+Bullish FVG: Gap between Candle 1 High and Candle 3 Low. (Indicates lack of sell orders).
+Bearish FVG: Gap between Candle 1 Low and Candle 3 High. (Indicates lack of buy orders).
+Usage: These act as magnets. Price often returns to these gaps to "balance" the inefficiency before continuing.
+3. Order Blocks (OB)
+Definition: A price range where large institutional orders were filled, causing a market shift.
+Identification:
+Bullish OB: The last down move (leg) prior to a liquidity sweep and a Break of Structure (BOS) up.
+Bearish OB: The last up move (leg) prior to a liquidity sweep and a Break of Structure (BOS) down.
+Usage: If price returns to this block, we expect a reaction in the original direction.
+4. Equilibrium (Premium vs. Discount)
+Definition: The 50% point of a price swing (from Swing High to Swing Low).
+Tool: Use the Gann Box or Fib Retracement.
+Usage:
+Discount (Below 50%): Only look to BUY here.
+Premium (Above 50%): Only look to SELL here.
+5. Breaker Blocks
+Definition: A "failed" Order Block. A support zone that broke and became resistance (or vice versa).
+Bullish Breaker: Low 
+→
+→
+ High 
+→
+→
+ Lower Low. The up-move (High) that was broken through becomes a Bullish Breaker.
+Bearish Breaker: High 
+→
+→
+ Low 
+→
+→
+ Higher High. The down-move (Low) that was broken through becomes a Bearish Breaker.
+6. Balanced Price Range (BPR)
+Definition: Overlapping Bullish and Bearish Fair Value Gaps.
+Logic: If price aggressively moves up (leaving a Bullish FVG) and then immediately aggressively moves down (leaving a Bearish FVG) through the same area, the overlap is a high-probability reversal zone.
+7. SMT Divergence
+Definition: A "crack" in correlation between correlated assets (e.g., ES/S&P500 and NQ/Nasdaq).
+Bullish SMT: One asset makes a Lower Low, while the other makes a Higher Low. (The one making a Higher Low shows strength).
+Bearish SMT: One asset makes a Higher High, while the other makes a Lower High.
+Usage: Use this to confirm reversals at key levels.
+PART III: THE SYSTEMIZED STRATEGY (Futures/Indices)
+This is the step-by-step flowchart for taking a trade. Do not deviate.
+Step 1: Establish Daily Bias (The "Setup")
+Check 4-Hour Trend: Is it Bullish or Bearish? This is your overall bias.
+Check 1-Hour Trend:
+If 1H matches 4H 
+→
+→
+ You will look for entries on the 5-minute.
+If 1H opposes 4H (Retracement) 
+→
+→
+ You will look for entries on the 15-minute.
+Step 2: The Wait (Pre-Market/Opening)
+Identify Draws on Liquidity: Mark out 1H and 4H Highs and Lows.
+Identify HTF Confluences: Mark out 1H and 4H Order Blocks or FVGs.
+The Rule: Sit on your hands. Do nothing until price sweeps a HTF Liquidity level or taps a HTF Confluence (OB/FVG).
+Step 3: The Execution (Lower Timeframe)
+Once the HTF level from Step 2 is hit, drop to your execution timeframe (5m or 15m as determined in Step 1).
+The Entry Checklist:
+Liquidity Sweep: Did we just sweep a high/low? (Yes).
+Break of Structure (BOS): Wait for a candle body closure in the opposite direction on the execution timeframe.
+The Return: Wait for price to return to a "Third Confluence" created by that BOS move:
+Fair Value Gap (FVG)
+Order Block
+Breaker Block
+Equilibrium
+The Trigger:
+Option A: Enter on the touch of the confluence.
+Option B (Safer): Wait for a candle color change (e.g., green candle closing out of a bullish FVG).
+Option C (Precision): Drop one timeframe lower (e.g., 5m 
+→
+→
+ 1m) and wait for a 1m BOS inside the 5m confluence.
+PART IV: TRADE MANAGEMENT
+Stop Loss (SL) Placement
+Safest: Above/Below the Liquidity Sweep (The invalidation point).
+Aggressive: Above/Below the Entry Confluence (e.g., the FVG or Order Block).
+Risky: Above/Below the high/low formed within the confluence.
+Take Profit (TP) Strategies
+Don't Guess: Target opposing logical points where price might reverse.
+Targets:
+Opposing Liquidity (Old Highs/Lows).
+Opposing Order Blocks or FVGs.
+Always aim for HTF (1H/4H) targets if trading with the trend.
+Rule: Never extend TPs. You can move SL to breakeven, but do not get greedy with TPs.
+PART V: THE FOREX STRATEGY (Session Plays)
+A specific variation for Forex pairs (like GBPJPY or GBPUSD).
+Concept: Use Session Highs/Lows as support/resistance and liquidity pools.
+Mark Session Times:
+Asian Open (8:00 PM EST)
+London Open (3:00 AM EST)
+New York Open (8:00 AM EST)
+Mark Session Highs/Lows: On the 30-minute timeframe, draw a box/line at the High and Low of the previous session (e.g., during NY, look at London Highs/Lows).
+The Trade:
+Wait for price to sweep/tap a previous Session High or Low.
+Drop to 5-minute.
+Wait for BOS + Confluence (FVG/OB/Breaker).
+Target: The opposing Session High/Low (e.g., if you sweep London Low and buy, target London High).
+PART VI: PSYCHOLOGY & RULES
+Systemize or Fail: If you change your strategy every day, you cannot track what works. Stick to the 4H/1H 
+→
+→
+ 5m/15m system.
+Journaling: You must record trades to know your probabilities. "I lose 80% of trades on Order Blocks, so I will stop using them."
+Risk Management: Use Stop Losses to prevent catastrophe.
+Patience: The "Hands in Ass" technique. Do not trade until your specific conditions (HTF Sweep + LTF BOS) are met. If they don't happen, do not trade.
+Cherry Picking: Not every FVG or OB works. They only work when combined with Liquidity Sweeps and Structure (Context).

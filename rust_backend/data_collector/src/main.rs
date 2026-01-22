@@ -15,6 +15,7 @@ mod alt_data;
 mod congress_free;
 mod congress_sources;
 mod historical;
+mod database;
 
 use anyhow::Result;
 use tracing::{info, warn};
@@ -26,7 +27,8 @@ use polygon::PolygonWebSocket;
 use binance::BinanceWebSocket;
 use alt_data::AltDataCollector;
 use congress_free::FreeCongressTracker;
-use historical::HistoricalDataCollector;
+use historical::{HistoricalDataCollector, SymbolAnalysis, AnalysisSummary};
+use database::TradingDatabase;
 use tokio::signal;
 use tokio::sync::broadcast::{self, Sender};
 use tokio::sync::RwLock;
@@ -170,6 +172,9 @@ async fn chart_handler(
 #[derive(Deserialize)]
 struct CandleQuery {
     symbol: String,
+    /// Timeframe format: "{period}:{bucket}" e.g. "1d:1m" = 1 day of 1-minute candles
+    /// Supported periods: 1d, 5d, 1M, 1Y
+    /// Supported buckets: 1s, 1m, 5m, 15m, 1h, 1d
     timeframe: String,
 }
 
@@ -195,11 +200,20 @@ async fn candles_handler(
     let Some(dq) = history_map.get(&params.symbol) else { return (headers, Json(vec![])); };
 
     let now = chrono::Utc::now();
-    let (cutoff, bucket_secs) = match params.timeframe.as_str() {
-        // last 60 seconds with 1-second buckets
-        "1m" => (now - Duration::seconds(60), 1_i64),
-        // last 24 hours with 1-minute buckets
-        _ => (now - Duration::hours(24), 60_i64),
+    
+    // Parse timeframe: "period:bucket" format (e.g., "1d:1m", "5d:15m")
+    // Legacy support: "1m" = 1 day of 1-minute candles, "1d" = 1 day of 1-minute candles
+    let (cutoff, bucket_secs): (chrono::DateTime<chrono::Utc>, i64) = match params.timeframe.as_str() {
+        // New format: period:bucket
+        "1d:1s" => (now - Duration::seconds(60), 1),           // 1 minute of 1-second candles
+        "1d:1m" => (now - Duration::hours(24), 60),            // 1 day of 1-minute candles
+        "1d:5m" => (now - Duration::hours(24), 300),           // 1 day of 5-minute candles
+        "5d:15m" => (now - Duration::days(5), 900),            // 5 days of 15-minute candles
+        "1M:1h" => (now - Duration::days(30), 3600),           // 1 month of 1-hour candles
+        "1Y:1d" => (now - Duration::days(365), 86400),         // 1 year of daily candles
+        "5Y:1w" => (now - Duration::days(365 * 5), 604800),    // 5 years of weekly candles
+        // Legacy format support
+        "1m" | "1d" | _ => (now - Duration::hours(24), 60),    // default: 1 day of 1-minute candles
     };
 
     #[derive(Clone, Copy)]
@@ -256,7 +270,7 @@ async fn load_target_symbols(filepath: &str) -> Result<Vec<String>> {
 
 /// Save tick history to JSON file
 async fn save_tick_history(history: &HashMap<String, VecDeque<MarketTick>>) -> Result<()> {
-    let timestamp = SystemTime::now()
+    let _timestamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
         .as_secs();
@@ -355,6 +369,10 @@ async fn run_phase_1(config: Arc<Config>) -> Result<()> {
 async fn run_phase_2(config: Arc<Config>) -> Result<()> {
     info!("📈 === PHASE 2: COLLECTING HISTORICAL DATA & EVENT CORRELATION ===");
     
+    // Initialize database connection
+    let database = Arc::new(TradingDatabase::new(config.clone()).await?);
+    info!("🗄️ Database connected for historical data storage");
+    
     // Load target symbols from Phase 1
     let target_symbols = load_target_symbols("target_symbols.json").await?;
     
@@ -371,7 +389,7 @@ async fn run_phase_2(config: Arc<Config>) -> Result<()> {
     info!("📋 Loaded {} detailed congressional trades", detailed_trades.len());
     
     // Initialize historical data collector
-    let historical_collector = HistoricalDataCollector::new(&config);
+    let historical_collector = HistoricalDataCollector::new(config.clone(), database.clone());
     
     // Process each target symbol
     for symbol in &target_symbols {
@@ -391,13 +409,13 @@ async fn run_phase_2(config: Arc<Config>) -> Result<()> {
                     warn!("⚠️ No price data received for {} (API limit or error)", symbol);
                     
                     // Still create an empty analysis file
-                    let empty_analysis = historical::SymbolAnalysis {
+                    let empty_analysis = SymbolAnalysis {
                         symbol: symbol.clone(),
                         analysis_date: chrono::Utc::now().date_naive().to_string(),
                         price_data_points: 0,
                         events_analyzed: 0,
                         correlations: Vec::new(),
-                        summary: historical::AnalysisSummary {
+                        summary: AnalysisSummary {
                             avg_return_1d_on_events: 0.0,
                             avg_return_3d_on_events: 0.0,
                             avg_return_7d_on_events: 0.0,
@@ -415,7 +433,7 @@ async fn run_phase_2(config: Arc<Config>) -> Result<()> {
                     info!("📊 Fetched {} price points for {}", price_data.len(), symbol);
                     
                     // Correlate with congressional events
-                    let analysis = historical_collector.correlate_events_with_prices(symbol, &detailed_trades, &price_data)?;
+                    let analysis = historical_collector.correlate_events_with_prices(symbol, &detailed_trades, &price_data).await?;
                     
                     // Save analysis to file
                     let analysis_json = serde_json::to_string_pretty(&analysis)?;
@@ -528,7 +546,7 @@ async fn run_phase_3(config: Arc<Config>) -> Result<()> {
             .with_state(http_state)
             .layer(cors);
 
-        let port: u16 = std::env::var("SSE_PORT").ok().and_then(|v| v.parse().ok()).unwrap_or(8080);
+        let port: u16 = std::env::var("SSE_PORT").ok().and_then(|v| v.parse().ok()).unwrap_or(8090);
         let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::UNSPECIFIED, port)).await.expect("bind http listener");
         info!("🌎 SSE server listening on http://0.0.0.0:{}/events", port);
         if let Err(err) = axum::serve(listener, app).await {
@@ -647,10 +665,90 @@ async fn run_phase_3(config: Arc<Config>) -> Result<()> {
     Ok(())
 }
 
+fn load_env() {
+    fn load_env_file(path: &std::path::Path) -> std::io::Result<()> {
+        let bytes = std::fs::read(path)?;
+        let contents = if bytes.starts_with(&[0xFF, 0xFE]) {
+            // UTF-16 LE
+            let u16s = bytes[2..]
+                .chunks_exact(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .collect::<Vec<_>>();
+            String::from_utf16(&u16s).unwrap_or_default()
+        } else if bytes.starts_with(&[0xFE, 0xFF]) {
+            // UTF-16 BE
+            let u16s = bytes[2..]
+                .chunks_exact(2)
+                .map(|c| u16::from_be_bytes([c[0], c[1]]))
+                .collect::<Vec<_>>();
+            String::from_utf16(&u16s).unwrap_or_default()
+        } else {
+            String::from_utf8_lossy(&bytes).to_string()
+        };
+
+        for line in contents.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            let Some((key, value)) = trimmed.split_once('=') else {
+                continue;
+            };
+            let key = key.trim().trim_start_matches('\u{feff}');
+            if std::env::var(key).is_ok() {
+                continue;
+            }
+            let mut value = value.trim().to_string();
+            if (value.starts_with('"') && value.ends_with('"'))
+                || (value.starts_with('\'') && value.ends_with('\''))
+            {
+                value = value[1..value.len().saturating_sub(1)].to_string();
+            }
+            std::env::set_var(key, value);
+        }
+
+        Ok(())
+    }
+
+    // Walk upward from the current directory to find a .env file.
+    let mut checked = Vec::new();
+    if let Ok(mut dir) = std::env::current_dir() {
+        for _ in 0..5 {
+            let candidate = dir.join(".env");
+            checked.push(candidate.clone());
+            if candidate.exists() {
+                if let Err(err) = dotenv::from_path(&candidate) {
+                    eprintln!("Failed to load .env via dotenv at {}: {}", candidate.display(), err);
+                }
+                if std::env::var("FINNHUB_API_KEY").is_err() {
+                    let _ = load_env_file(&candidate);
+                }
+                if std::env::var("FINNHUB_API_KEY").is_ok() {
+                    return;
+                }
+            }
+            if let Some(parent) = dir.parent() {
+                dir = parent.to_path_buf();
+            } else {
+                break;
+            }
+        }
+    }
+
+    if std::env::var("FINNHUB_API_KEY").is_err() {
+        let searched = checked
+            .into_iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        eprintln!("FINNHUB_API_KEY missing. Looked for .env in: {}", searched);
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Load environment variables from .env file
-    dotenv::dotenv().ok();
+    // Load environment variables from .env file(s)
+    load_env();
     
     // Initialize logging
     tracing_subscriber::fmt::init();
